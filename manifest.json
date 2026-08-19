@@ -1,0 +1,10 @@
+{
+  "name": "Proofmark — Batch Watermark Studio",
+  "short_name": "Proofmark",
+  "description": "Watermark, compress, crop and convert photos and PDFs entirely in your browser.",
+  "start_url": ".",
+  "display": "standalone",
+  "background_color": "#10131a",
+  "theme_color": "#10131a",
+  "icons": []
+}

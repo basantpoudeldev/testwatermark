@@ -1,0 +1,13 @@
+# ads.txt — Authorized Digital Sellers
+# This file MUST live at your domain root exactly at: https://yourdomain.com/ads.txt
+# (not in a subfolder — that's a hard requirement of the ads.txt spec).
+#
+# Replace pub-XXXXXXXXXXXXXXXX below with the SAME numeric ID you put in
+# ADSENSE_CLIENT_ID in site-config.js (drop the "ca-" prefix here — AdSense
+# uses "ca-pub-XXXX" in code but just "pub-XXXX" in ads.txt).
+#
+# Without this file, other sites can fraudulently claim to sell ad
+# inventory on your domain, and some ad buyers will refuse to bid on
+# your inventory at all once ads.txt adoption is expected.
+
+google.com, pub-XXXXXXXXXXXXXXXX, DIRECT, f08c47fec0942fa0

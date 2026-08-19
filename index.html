@@ -1,0 +1,1084 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+
+<!-- ============================================================
+     SITE CONFIG — admin: to enable analytics/ads, edit ONLY
+     site-config.js (in this same folder). Nothing here needs
+     to change.
+     ============================================================ -->
+<script src="site-config.js"></script>
+<script src="ga-loader.js"></script>
+<script src="consent.js"></script>
+
+<title>Proofmark — Free Batch Watermark, Compress & Convert Tool for Images, PDFs and Video</title>
+<meta name="description" content="Watermark, compress, crop and convert photos, PDFs and video in your browser — batch processing, no uploads to a server, nothing stored. Free, private, and works on mobile.">
+<meta name="theme-color" content="#10131a">
+
+<!-- Baseline hardening via meta tag. NOTE: meta-tag CSP can't set
+     frame-ancestors or several other directives — the header-based
+     versions in the provided vercel.json / _headers files are the
+     real protection; this is a same-page fallback only. -->
+<meta http-equiv="Content-Security-Policy" content="
+  default-src 'self';
+  script-src 'self' https://www.googletagmanager.com https://pagead2.googlesyndication.com;
+  style-src 'self' 'unsafe-inline';
+  img-src 'self' data: blob: https:;
+  font-src 'self' data:;
+  connect-src 'self' https://www.google-analytics.com https://region1.google-analytics.com;
+  worker-src 'self' blob:;
+  frame-src https://pagead2.googlesyndication.com https://googleads.g.doubleclick.net;
+  object-src 'none';
+  base-uri 'self';
+">
+<meta http-equiv="X-Content-Type-Options" content="nosniff">
+<link rel="canonical" href="https://proofmark.app/">
+<meta property="og:title" content="Proofmark — Batch Watermark Studio">
+<meta property="og:description" content="Watermark, compress, crop and convert photos, PDFs and video entirely in your browser. Free, private, batch-ready.">
+<meta property="og:type" content="website">
+<meta name="twitter:card" content="summary">
+<link rel="manifest" href="manifest.json">
+<script src="vendor/jszip/jszip.min.js"></script>
+<script src="vendor/pdf-lib/pdf-lib.min.js"></script>
+<script src="vendor/pdf-encrypt-lite/pdf-encrypt-lite.umd.js"></script>
+<script src="vendor/pdfjs/pdf.min.js"></script>
+<script src="vendor/ffmpeg/ffmpeg.min.js"></script>
+<script type="module" src="vendor/pdf-decrypt/bridge.mjs"></script>
+<style>
+  :root{
+    --bg:#10131a; --panel:#171b24; --panel-2:#1e232f; --line:#2a3040;
+    --ink:#f2efe7; --ink-dim:#9aa1b0; --brass:#c9a15a; --brass-soft:rgba(201,161,90,0.14);
+    --danger:#d9645a; --radius:10px;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:radial-gradient(circle at 15% 0%, rgba(201,161,90,0.06), transparent 40%), var(--bg);
+    color:var(--ink); font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; min-height:100vh;
+  }
+  ::selection{background:var(--brass-soft);}
+  button{font-family:inherit;}
+  .visually-hidden{position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0,0,0,0);}
+
+  /* ---------- header + nav ---------- */
+  header{
+    display:flex; align-items:center; justify-content:space-between;
+    padding:16px 32px; border-bottom:1px solid var(--line);
+    flex-wrap:wrap; gap:14px; position:relative; z-index:20;
+  }
+  .brand{display:flex; align-items:center; gap:14px;}
+  .sidebar-toggle{
+    display:none; background:var(--panel); border:1px solid var(--line);
+    color:var(--ink); width:36px; height:36px; border-radius:8px; cursor:pointer;
+    align-items:center; justify-content:center; flex:none;
+  }
+  .sidebar-toggle svg{width:18px; height:18px; fill:currentColor;}
+  .seal{
+    width:38px;height:38px;flex:none; border-radius:50%; border:1.5px solid var(--brass);
+    display:flex;align-items:center;justify-content:center; position:relative;
+    animation:stamp-in 0.6s cubic-bezier(.2,1.4,.4,1);
+  }
+  .seal::before{content:"";position:absolute; inset:5px;border-radius:50%;border:1px dashed var(--brass);opacity:0.6;}
+  .seal svg{width:16px;height:16px;fill:var(--brass);}
+  @keyframes stamp-in{
+    0%{transform:scale(2.4) rotate(-12deg); opacity:0;}
+    60%{transform:scale(0.92) rotate(2deg); opacity:1;}
+    100%{transform:scale(1) rotate(0deg);}
+  }
+  .brand-text h1{font-family:Georgia, 'Iowan Old Style', 'Palatino Linotype', ui-serif, serif; font-weight:600; font-size:20px; margin:0; letter-spacing:0.2px;}
+  .brand-text p{margin:2px 0 0; font-size:12px; color:var(--ink-dim); font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; letter-spacing:0.3px;}
+  nav.tabs{
+    display:flex; gap:6px; background:var(--panel); border:1px solid var(--line);
+    border-radius:999px; padding:4px; overflow-x:auto; max-width:100%;
+  }
+  nav.tabs button{
+    border:none; background:transparent; color:var(--ink-dim); padding:9px 18px;
+    border-radius:999px; font-size:13px; font-weight:500; cursor:pointer;
+    display:flex; align-items:center; gap:7px; white-space:nowrap;
+  }
+  nav.tabs button svg{width:14px;height:14px;fill:currentColor;}
+  nav.tabs button.active{background:var(--brass); color:#161616; font-weight:600;}
+  .status-chip{
+    font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:11px; color:var(--ink-dim);
+    border:1px solid var(--line); border-radius:999px; padding:6px 12px; white-space:nowrap;
+  }
+
+  /* ---------- layout ---------- */
+  .workspace{
+    display:grid; grid-template-columns:320px 1fr; gap:0;
+    height:calc(100vh - var(--header-h, 74px));
+  }
+  .sidebar-backdrop{display:none;}
+
+  @media (max-width:880px){
+    .sidebar-toggle{display:flex;}
+    .workspace{grid-template-columns:1fr; height:auto; display:block;}
+    .proof-area{height:auto; overflow-y:visible;}
+    .control-desk{
+      position:fixed; top:0; left:-100%; width:86%; max-width:340px; height:100vh;
+      z-index:40; background:var(--bg); transition:left 0.25s ease; box-shadow:0 0 40px rgba(0,0,0,0.5);
+    }
+    .control-desk.open{left:0;}
+    .sidebar-backdrop{
+      display:none; position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:30;
+    }
+    .sidebar-backdrop.open{display:block;}
+    .mobile-preview-thumb{display:block !important;}
+  }
+
+  /* ---------- control desk ---------- */
+  .control-desk{
+    border-right:1px solid var(--line); padding:24px; display:flex; flex-direction:column; gap:22px;
+    height:100%; overflow-y:auto; overscroll-behavior:contain;
+  }
+  .mobile-preview-thumb{
+    display:none; position:sticky; top:-24px; margin:-24px -24px 0; z-index:5;
+    background:var(--bg); padding:14px 24px; border-bottom:1px solid var(--line);
+  }
+  .mobile-preview-thumb canvas{width:100%; border-radius:6px; background:#fff; display:block;}
+  .mobile-preview-thumb .mpt-label{
+    font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:10px; color:var(--ink-dim);
+    text-transform:uppercase; letter-spacing:0.5px; margin-bottom:6px;
+  }
+  .section{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:16px;}
+  .section-head{display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;}
+  .section-title{font-family:Georgia, 'Iowan Old Style', 'Palatino Linotype', ui-serif, serif; font-size:14px; font-weight:600; display:flex; align-items:center; gap:8px;}
+  .section-title .idx{font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:10px; color:var(--brass); border:1px solid var(--brass); border-radius:4px; padding:1px 5px;}
+  label.field{display:block; font-size:11px; color:var(--ink-dim); margin:12px 0 5px; font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; text-transform:uppercase; letter-spacing:0.5px;}
+  label.field:first-of-type{margin-top:0;}
+  input[type=text], input[type=number], input[type=file], select{
+    width:100%; background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    border-radius:6px; padding:8px 10px; font-size:13px;
+  }
+  input:focus, select:focus{outline:1.5px solid var(--brass); outline-offset:0;}
+  input[type=range]{width:100%; accent-color:var(--brass);}
+  input:disabled, select:disabled, input[type=range]:disabled{opacity:0.4; cursor:not-allowed;}
+  .row{display:flex; gap:8px;}
+  .row > *{flex:1;}
+  .rangeval{font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:11px; color:var(--brass); float:right;}
+  .switch{position:relative; width:38px;height:21px; flex:none;}
+  .switch input{opacity:0;width:0;height:0;}
+  .slider-toggle{position:absolute; cursor:pointer; inset:0; background:var(--panel-2); border:1px solid var(--line); border-radius:999px; transition:0.15s;}
+  .slider-toggle::before{content:""; position:absolute; height:15px;width:15px; left:2px; top:2px; background:var(--ink-dim); border-radius:50%; transition:0.15s;}
+  .switch input:checked + .slider-toggle{background:var(--brass-soft); border-color:var(--brass);}
+  .switch input:checked + .slider-toggle::before{transform:translateX(17px); background:var(--brass);}
+  .segmented{display:flex; border:1px solid var(--line); border-radius:6px; overflow:hidden;}
+  .segmented button{flex:1; background:var(--panel-2); border:none; color:var(--ink-dim); padding:8px 6px; font-size:12px; cursor:pointer; border-right:1px solid var(--line);}
+  .segmented button:last-child{border-right:none;}
+  .segmented button.active{background:var(--brass-soft); color:var(--brass); font-weight:600;}
+  .pos-grid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+  .pos-btn{background:var(--panel-2); border:1px solid var(--line); color:var(--ink-dim); border-radius:6px; padding:10px; font-size:11px; font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; cursor:pointer;}
+  .pos-btn.active{background:var(--brass-soft); border-color:var(--brass); color:var(--brass);}
+  .hint{font-size:11px; color:var(--ink-dim); line-height:1.5; margin-top:8px;}
+  .preset-row{display:flex; gap:8px; margin-top:10px;}
+  .preset-row select{flex:1;}
+
+  /* ---------- proof area ---------- */
+  .proof-area{
+    padding:24px 32px; display:flex; flex-direction:column; gap:20px;
+    height:100%; overflow-y:auto; overscroll-behavior:contain;
+  }
+  .panel-view{display:none; flex-direction:column; gap:20px;}
+  .panel-view.active{display:flex;}
+  .dropzone{
+    border:1.5px dashed var(--line); border-radius:var(--radius); padding:26px; text-align:center;
+    cursor:pointer; transition:0.15s; font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:12px; color:var(--ink-dim);
+  }
+  .dropzone:hover, .dropzone.drag{border-color:var(--brass); background:var(--brass-soft); color:var(--brass);}
+  .dropzone strong{color:var(--ink); font-family:Georgia, 'Iowan Old Style', 'Palatino Linotype', ui-serif, serif; font-size:15px; display:block; margin-bottom:4px;}
+  .dropzone.drag strong{color:var(--brass);}
+
+  .preview-wrap{
+    position:sticky; top:0; z-index:3;
+    background:var(--panel); border-radius:var(--radius); padding:22px;
+    display:flex; align-items:center; justify-content:center; min-height:300px;
+  }
+  .proof-frame{position:relative; max-width:100%; touch-action:none;}
+  .proof-frame::before, .proof-frame::after{content:""; position:absolute; left:-10px; right:-10px; height:0; border-top:1px dashed var(--line);}
+  .proof-frame::before{top:-10px;} .proof-frame::after{bottom:-10px;}
+  .proof-frame canvas{max-width:100%; max-height:56vh; display:block; border-radius:4px; background:#fff;}
+  .drag-handle{
+    position:absolute; width:22px; height:22px; margin:-11px 0 0 -11px;
+    border-radius:50%; background:var(--brass); border:2px solid #161616; cursor:grab;
+    display:none; z-index:10; box-shadow:0 2px 6px rgba(0,0,0,0.4);
+  }
+  .drag-handle.show{display:block;}
+  .drag-handle:active{cursor:grabbing;}
+  .page-nav{position:absolute; bottom:-38px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:10px; font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:11px; color:var(--ink-dim);}
+  .page-nav button{background:var(--panel-2); border:1px solid var(--line); color:var(--ink); border-radius:5px; width:24px;height:24px; cursor:pointer;}
+  .empty-note{color:var(--ink-dim); font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:12px;}
+
+  .contact-sheet-head{display:flex; align-items:center; justify-content:space-between;}
+  .contact-sheet-head h2{font-family:Georgia, 'Iowan Old Style', 'Palatino Linotype', ui-serif, serif; font-size:14px; margin:0; font-weight:600;}
+  .contact-sheet{display:grid; grid-template-columns:repeat(auto-fill, minmax(120px, 1fr)); gap:12px;}
+  .thumb{background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px; cursor:pointer; position:relative;}
+  .thumb.active{border-color:var(--brass);}
+  .thumb canvas{width:100%; display:block; border-radius:4px; background:#fff;}
+  .thumb .fname{font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:10px; color:var(--ink-dim); margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .thumb .rm{position:absolute; top:4px; right:4px; width:18px; height:18px; border-radius:50%; background:rgba(0,0,0,0.6); color:var(--ink); border:none; font-size:11px; cursor:pointer; line-height:1;}
+  .thumb .adj{position:absolute; bottom:26px; right:4px; background:rgba(0,0,0,0.65); color:var(--brass); border:none; border-radius:5px; font-size:9px; padding:3px 6px; cursor:pointer; font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;}
+
+  .export-bar{display:flex; align-items:flex-end; gap:16px; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:14px 16px; flex-wrap:wrap;}
+  .export-field{min-width:130px;}
+  .export-field label.field{margin:0 0 5px;}
+  .export-field.grow{flex:1; min-width:180px;}
+
+  .actions{display:flex; gap:10px; align-items:center; justify-content:flex-end; flex-wrap:wrap;}
+  button.primary{background:var(--brass); color:#161616; border:none; font-weight:600; padding:11px 20px; border-radius:6px; cursor:pointer; font-size:13px;}
+  button.primary:disabled{background:var(--panel-2); color:var(--ink-dim); cursor:not-allowed;}
+  button.ghost{background:transparent; border:1px solid var(--line); color:var(--ink-dim); padding:11px 16px; border-radius:6px; cursor:pointer; font-size:13px;}
+  button.ghost:hover{border-color:var(--brass); color:var(--brass);}
+  button.ghost.small{padding:6px 10px; font-size:11px;}
+
+  /* ---------- modal ---------- */
+  .modal-backdrop{position:fixed; inset:0; background:rgba(8,10,14,0.75); z-index:100; display:none; align-items:center; justify-content:center; padding:20px;}
+  .modal-backdrop.open{display:flex;}
+  .modal{background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px; max-width:560px; width:100%; max-height:88vh; overflow-y:auto;}
+  .modal h3{font-family:Georgia, 'Iowan Old Style', 'Palatino Linotype', ui-serif, serif; margin:0 0 4px; font-size:17px;}
+  .modal .modal-sub{color:var(--ink-dim); font-size:12px; margin:0 0 16px;}
+  .crop-preset-grid{display:grid; grid-template-columns:repeat(2,1fr); gap:8px; margin-bottom:14px;}
+  .crop-preset-btn{background:var(--panel-2); border:1px solid var(--line); color:var(--ink); border-radius:8px; padding:10px; text-align:left; cursor:pointer;}
+  .crop-preset-btn:hover{border-color:var(--brass);}
+  .crop-preset-btn.active{border-color:var(--brass); background:var(--brass-soft);}
+  .crop-preset-btn .cpn{font-size:12px; font-weight:600;}
+  .crop-preset-btn .cpd{font-size:10px; color:var(--ink-dim); font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace;}
+  .crop-stage{position:relative; background:#000; border-radius:8px; overflow:hidden; margin:14px 0; display:flex; align-items:center; justify-content:center; min-height:200px;}
+  .crop-stage img{max-width:100%; max-height:44vh; display:block;}
+  .crop-box{position:absolute; border:2px solid var(--brass); background:rgba(201,161,90,0.15); cursor:move; touch-action:none;}
+  .modal-actions{display:flex; justify-content:flex-end; gap:10px; margin-top:16px;}
+
+  @media (max-width:520px){
+    header{padding:14px 16px;}
+    .proof-area{padding:16px;}
+    .brand-text h1{font-size:17px;}
+    nav.tabs button{padding:8px 12px; font-size:12px;}
+  }
+
+  /* ---------- marks list ---------- */
+  .mark-chips{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px;}
+  .mark-chip{
+    display:flex; align-items:center; gap:6px; background:var(--panel-2); border:1px solid var(--line);
+    border-radius:999px; padding:5px 6px 5px 12px; font-size:11px; cursor:pointer; color:var(--ink-dim);
+  }
+  .mark-chip.selected{border-color:var(--brass); color:var(--brass); background:var(--brass-soft);}
+  .mark-chip .dot{width:7px; height:7px; border-radius:50%; background:var(--ink-dim); flex:none;}
+  .mark-chip.on .dot{background:#7fbf7f;}
+  .mark-chip .del{
+    background:transparent; border:none; color:inherit; cursor:pointer; font-size:13px; line-height:1;
+    padding:2px 4px; border-radius:50%;
+  }
+  .mark-chip .del:hover{background:rgba(217,100,90,0.2); color:var(--danger);}
+  .add-mark-row{display:flex; gap:8px; margin-bottom:14px;}
+  .add-mark-row button{flex:1;}
+  .mark-detail{border-top:1px dashed var(--line); padding-top:14px;}
+  .mark-empty{font-size:12px; color:var(--ink-dim); text-align:center; padding:14px 0;}
+
+  /* ---------- video tab ---------- */
+  .video-thumb-wrap{position:relative;}
+  .video-thumb-wrap .dur{
+    position:absolute; bottom:6px; right:6px; background:rgba(0,0,0,0.7); color:#fff;
+    font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:9px; padding:2px 5px; border-radius:4px;
+  }
+  .progress-bar{
+    width:100%; height:6px; background:var(--panel-2); border-radius:999px; overflow:hidden; margin-top:8px;
+  }
+  .progress-bar-fill{height:100%; background:var(--brass); width:0%; transition:width 0.2s;}
+  .video-status{font-family:ui-monospace, 'SF Mono', 'Cascadia Code', Consolas, monospace; font-size:11px; color:var(--ink-dim); margin-top:8px;}
+  .warn-box{
+    background:rgba(201,161,90,0.08); border:1px solid var(--brass-soft); border-radius:8px;
+    padding:12px 14px; font-size:11px; color:var(--ink-dim); line-height:1.6;
+  }
+
+  .app-footer{
+    border-top:1px solid var(--line); padding:16px 32px;
+    display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;
+    font-size:11px; color:var(--ink-dim);
+  }
+  .app-footer-links{display:flex; gap:16px;}
+  .app-footer-links a{color:var(--ink-dim); text-decoration:none;}
+  .app-footer-links a:hover{color:var(--brass);}
+  @media (max-width:520px){ .app-footer{padding:14px 16px;} }
+
+  /* ---------- PDF Tools ---------- */
+  .pdftools-subnav{
+    display:flex; gap:6px; flex-wrap:wrap; background:var(--panel); border:1px solid var(--line);
+    border-radius:10px; padding:5px;
+  }
+  .pdftools-subnav button{
+    background:transparent; border:none; color:var(--ink-dim); padding:8px 14px;
+    border-radius:7px; font-size:12px; font-weight:500; cursor:pointer;
+  }
+  .pdftools-subnav button.active{background:var(--brass-soft); color:var(--brass); font-weight:600;}
+  .subtool-view{display:none; flex-direction:column; gap:18px;}
+  .subtool-view.active{display:flex;}
+
+  .page-manager-grid{
+    display:grid; grid-template-columns:repeat(auto-fill, minmax(130px, 1fr)); gap:12px;
+  }
+  .page-card{
+    background:var(--panel); border:1px solid var(--line); border-radius:8px; padding:8px;
+    cursor:grab; position:relative; transition:opacity 0.15s, border-color 0.15s;
+  }
+  .page-card.dragging{opacity:0.35;}
+  .page-card.drag-over{border-color:var(--brass);}
+  .page-card canvas{
+    width:100%; display:block; border-radius:4px; background:#fff; transition:transform 0.2s;
+  }
+  .page-card .pc-src{
+    font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:9px; color:var(--ink-dim);
+    margin-top:6px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .page-card .pc-controls{
+    display:flex; justify-content:space-between; align-items:center; margin-top:6px;
+  }
+  .page-card .pc-btn{
+    background:var(--panel-2); border:1px solid var(--line); color:var(--ink);
+    width:22px; height:22px; border-radius:5px; cursor:pointer; font-size:11px; line-height:1;
+  }
+  .page-card .pc-btn:hover{border-color:var(--brass); color:var(--brass);}
+  .page-card .pc-check{width:16px; height:16px; accent-color:var(--brass);}
+
+  .pdftool-actions-panel{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:16px;
+    display:flex; flex-direction:column; gap:12px;
+  }
+  .pdftool-action-row{display:flex; align-items:center; gap:12px; flex-wrap:wrap;}
+  .pdftool-action-row input[type=text]{flex:1; min-width:160px;}
+
+  .compare-upload-row{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media (max-width:640px){ .compare-upload-row{grid-template-columns:1fr;} }
+  .compare-page-pair{
+    display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:22px;
+    border:1px solid var(--line); border-radius:10px; padding:14px; background:var(--panel);
+  }
+  @media (max-width:640px){ .compare-page-pair{grid-template-columns:1fr;} }
+  .compare-page-pair canvas{width:100%; border-radius:6px; background:#fff;}
+  .compare-diff{
+    grid-column:1 / -1; font-family:'IBM Plex Mono', ui-monospace, monospace; font-size:12px;
+    line-height:1.7; background:var(--panel-2); border-radius:8px; padding:12px; max-height:260px; overflow-y:auto;
+  }
+  .diff-added{background:rgba(127,191,127,0.18); color:#9fd89f; display:block; padding:1px 4px;}
+  .diff-removed{background:rgba(217,100,90,0.18); color:#e8a49e; text-decoration:line-through; display:block; padding:1px 4px;}
+  .diff-same{color:var(--ink-dim); display:block; padding:1px 4px;}
+
+  #signaturePad{
+    width:100%; max-width:500px; height:160px; background:#fff; border-radius:8px;
+    touch-action:none; cursor:crosshair; display:block;
+  }
+
+  .edit-toolbar{
+    background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:12px 14px;
+    display:flex; flex-direction:column; gap:10px;
+  }
+  .edit-toolbar-row{display:flex; align-items:center; gap:16px; flex-wrap:wrap; font-size:12px; color:var(--ink-dim);}
+  #previewCanvasEdit{cursor:crosshair; touch-action:none;}
+</style>
+</head>
+<body>
+
+<div class="sidebar-backdrop" id="sidebarBackdrop"></div>
+
+<header>
+  <div style="display:flex; align-items:center; gap:12px;">
+    <button class="sidebar-toggle" id="sidebarToggle" aria-label="Open watermark settings">
+      <svg viewBox="0 0 24 24"><path d="M3 6h18M3 12h18M3 18h18" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+    </button>
+    <div class="brand">
+      <div class="seal"><svg viewBox="0 0 24 24"><path d="M12 2 L14 8 L20 8 L15 12 L17 18 L12 14 L7 18 L9 12 L4 8 L10 8 Z"/></svg></div>
+      <div class="brand-text"><h1>Proofmark</h1><p>BATCH WATERMARK STUDIO</p></div>
+    </div>
+  </div>
+
+  <nav class="tabs" aria-label="Tools">
+    <button class="active" data-tab="images">
+      <svg viewBox="0 0 24 24"><path d="M4 5h16a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm2 12l4-5 3 3 3-4 5 6H6z"/></svg>
+      Images
+    </button>
+    <button data-tab="pdfs">
+      <svg viewBox="0 0 24 24"><path d="M6 2h8l6 6v14a1 1 0 01-1 1H6a1 1 0 01-1-1V3a1 1 0 011-1zm7 1.5V9h5.5L13 3.5z"/></svg>
+      Watermark PDF
+    </button>
+    <button data-tab="pdftools">
+      <svg viewBox="0 0 24 24"><path d="M6 2h8l6 6v14a1 1 0 01-1 1H6a1 1 0 01-1-1V3a1 1 0 011-1zm7 1.5V9h5.5L13 3.5z M8 13h8v1.5H8zM8 16h8v1.5H8zM8 10h4v1.5H8z"/></svg>
+      PDF Tools
+    </button>
+    <button data-tab="video">
+      <svg viewBox="0 0 24 24"><path d="M4 5h11a1 1 0 011 1v12a1 1 0 01-1 1H4a1 1 0 01-1-1V6a1 1 0 011-1zm13 5l4-3v10l-4-3v-4z"/></svg>
+      Video
+    </button>
+    <button data-tab="convert">
+      <svg viewBox="0 0 24 24"><path d="M17 3l4 4-4 4M7 21l-4-4 4-4M21 7H9a4 4 0 00-4 4v1M3 17h12a4 4 0 004-4v-1" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/></svg>
+      Convert
+    </button>
+  </nav>
+
+  <div class="status-chip" id="statusChip">0 files loaded</div>
+</header>
+
+<div class="workspace">
+
+  <!-- CONTROL DESK -->
+  <aside class="control-desk" id="controlDesk">
+
+    <div class="mobile-preview-thumb" id="mobilePreviewThumb">
+      <div class="mpt-label">Live preview</div>
+      <canvas id="mobileThumbCanvas"></canvas>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><div class="section-title">Presets</div></div>
+      <div class="preset-row">
+        <select id="presetSelect"><option value="">Load a saved preset…</option></select>
+        <button class="ghost small" id="presetLoadBtn">Load</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <input type="text" id="presetName" placeholder="Preset name">
+        <button class="ghost small" id="presetSaveBtn">Save</button>
+      </div>
+      <div class="row" style="margin-top:8px;">
+        <button class="ghost small" id="presetDeleteBtn" style="width:100%;">Delete selected preset</button>
+      </div>
+      <p class="hint">Image-type marks aren't saved in presets — you'll re-upload logos after loading one.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><div class="section-title"><span class="idx">01</span> Center repeat (stackable)</div></div>
+      <div class="mark-chips" id="centerChips"></div>
+      <div class="add-mark-row">
+        <button class="ghost small" id="addCenterBtn">+ Add layer</button>
+      </div>
+
+      <div class="mark-detail" id="centerDetail">
+        <div class="toggle-row" style="margin-bottom:10px;">
+          <span class="hint" style="margin:0;">Enabled</span>
+          <label class="switch"><input type="checkbox" id="centerEnabled" checked><span class="slider-toggle"></span></label>
+        </div>
+
+        <label class="field">Pattern</label>
+        <div class="segmented" id="patternSeg">
+          <button class="active" data-val="strip">Strip (center band)</button>
+          <button data-val="diagonal">Diagonal tile</button>
+        </div>
+
+        <label class="field">Content</label>
+        <div class="segmented" id="centerTypeSeg">
+          <button class="active" data-val="text">Text</button>
+          <button data-val="image">Image</button>
+        </div>
+
+        <div id="centerTextFields">
+          <label class="field">Watermark text</label>
+          <input type="text" id="centerText" value="LAVIE GARDEN™ | RAMHITI">
+          <label class="field">Text color</label>
+          <input type="color" id="centerColor" value="#ffffff" style="height:34px;padding:2px;">
+        </div>
+        <div id="centerImageFields" style="display:none;">
+          <label class="field">Watermark image</label>
+          <input type="file" id="centerImageInput" accept="image/*">
+        </div>
+        <div id="diagonalAngleField" style="display:none;">
+          <label class="field">Angle <span class="rangeval" id="angleVal">-30°</span></label>
+          <input type="range" id="centerAngle" min="-60" max="60" value="-30">
+        </div>
+
+        <label class="field">Size <span class="rangeval" id="sizeVal">22px</span></label>
+        <input type="range" id="centerSize" min="10" max="80" value="22">
+        <label class="field">Spacing <span class="rangeval" id="spacingVal">48px</span></label>
+        <input type="range" id="centerSpacing" min="0" max="200" value="48">
+        <label class="field">Opacity <span class="rangeval" id="opacityVal">35%</span></label>
+        <input type="range" id="centerOpacity" min="5" max="100" value="35">
+
+        <label class="field">Position</label>
+        <div class="segmented" id="centerDragSeg">
+          <button class="active" data-val="fixed">Fixed (centered)</button>
+          <button data-val="drag">Draggable</button>
+        </div>
+
+        <p class="hint">Strip = one repeating row across center. Diagonal = tiles across the whole frame. Add another layer to stack a second repeating pattern.</p>
+      </div>
+      <div class="mark-empty" id="centerEmptyNote" style="display:none;">No center layers yet — add one above.</div>
+    </div>
+
+    <div class="section">
+      <div class="section-head"><div class="section-title"><span class="idx">02</span> Marks (stackable)</div></div>
+      <div class="mark-chips" id="markChips"></div>
+      <div class="add-mark-row">
+        <button class="ghost small" id="addMarkBtn">+ Add mark</button>
+        <button class="ghost small" id="resetPositionsBtn">Reset positions</button>
+      </div>
+
+      <div class="mark-detail" id="markDetail">
+        <div class="toggle-row" style="margin-bottom:10px;">
+          <span class="hint" style="margin:0;">Enabled</span>
+          <label class="switch"><input type="checkbox" id="markEnabled"><span class="slider-toggle"></span></label>
+        </div>
+
+        <label class="field">Content</label>
+        <div class="segmented" id="markTypeSeg">
+          <button class="active" data-val="text">Text</button>
+          <button data-val="image">Image</button>
+        </div>
+        <div id="markTextFields">
+          <label class="field">Text</label>
+          <input type="text" id="markText" value="">
+          <label class="field">Color</label>
+          <input type="color" id="markColor" value="#ffffff" style="height:34px;padding:2px;">
+        </div>
+        <div id="markImageFields" style="display:none;">
+          <label class="field">Logo image</label>
+          <input type="file" id="markImageInput" accept="image/*">
+        </div>
+
+        <label class="field">Size <span class="rangeval" id="markSizeVal">16px</span></label>
+        <input type="range" id="markSize" min="8" max="80" value="16">
+        <label class="field">Opacity <span class="rangeval" id="markOpacityVal">85%</span></label>
+        <input type="range" id="markOpacity" min="5" max="100" value="85">
+
+        <label class="field">Position</label>
+        <div class="segmented" id="markPosModeSeg">
+          <button class="active" data-val="fixed">Fixed (quadrant)</button>
+          <button data-val="drag">Draggable</button>
+        </div>
+        <div class="pos-grid" id="markPosGrid" style="margin-top:8px;">
+          <button class="pos-btn active" data-val="tl">Top left</button>
+          <button class="pos-btn" data-val="tr">Top right</button>
+          <button class="pos-btn" data-val="bl">Bottom left</button>
+          <button class="pos-btn" data-val="br">Bottom right</button>
+        </div>
+      </div>
+      <div class="mark-empty" id="markEmptyNote" style="display:none;">No marks yet — add one above.</div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title"><span class="idx">03</span> Background fill</div>
+        <label class="switch"><input type="checkbox" id="bgEnabled"><span class="slider-toggle"></span></label>
+      </div>
+      <label class="field">Style</label>
+      <div class="segmented" id="bgStyleSeg">
+        <button class="active" data-val="strip">Solid strip</button>
+        <button data-val="box">Padded box per mark</button>
+      </div>
+      <label class="field">Color</label>
+      <input type="color" id="bgColor" value="#000000" style="height:34px;padding:2px;">
+      <label class="field">Background opacity <span class="rangeval" id="bgOpacityVal">40%</span></label>
+      <input type="range" id="bgOpacity" min="5" max="100" value="40">
+      <p class="hint">Applies to the center pattern and every mark, so busy photos don't dissolve the watermark.</p>
+    </div>
+
+  </aside>
+
+  <!-- PROOF AREA -->
+  <main class="proof-area">
+
+    <!-- ============ IMAGES PANEL ============ -->
+    <section class="panel-view active" id="panel-images">
+      <div class="dropzone" id="dropzoneImg">
+        <strong>Drop photos here, or click to upload</strong>
+        Batch supported — every image gets the same watermark settings
+        <input type="file" id="fileInputImg" accept="image/*" multiple style="display:none;">
+      </div>
+
+      <div class="preview-wrap">
+        <div class="proof-frame" id="proofFrameImg">
+          <canvas id="previewCanvasImg"></canvas>
+        </div>
+        <div class="empty-note" id="emptyNoteImg">Upload an image to see the watermark preview</div>
+      </div>
+
+      <div class="contact-sheet-head"><h2>Contact sheet</h2><span class="hint" id="countNoteImg"></span></div>
+      <div class="contact-sheet" id="thumbsImg"></div>
+
+      <div class="export-bar">
+        <div class="export-field">
+          <label class="field">Output format</label>
+          <select id="exportFormat"><option value="jpeg">JPEG</option><option value="png">PNG</option><option value="webp">WebP</option></select>
+        </div>
+        <div class="export-field">
+          <label class="field">Compression mode</label>
+          <div class="segmented" id="compressModeSeg">
+            <button class="active" data-val="quality">By quality</button>
+            <button data-val="size">By target size</button>
+          </div>
+        </div>
+        <div class="export-field grow" id="qualityModeField">
+          <label class="field">Quality <span class="rangeval" id="exportQualityVal">85%</span></label>
+          <input type="range" id="exportQuality" min="10" max="100" value="85">
+        </div>
+        <div class="export-field grow" id="sizeModeField" style="display:none;">
+          <label class="field">Target size</label>
+          <div class="segmented" id="targetSizePresetSeg">
+            <button data-val="200">200KB</button>
+            <button data-val="100">100KB</button>
+            <button data-val="50">50KB</button>
+            <button data-val="custom" class="active">Custom</button>
+          </div>
+          <input type="range" id="targetSizeKB" min="10" max="2000" value="150" style="margin-top:8px;">
+          <span class="rangeval" id="targetSizeVal" style="float:none; display:block; text-align:right;">150 KB</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="ghost" id="clearBtnImg">Clear all</button>
+        <button class="primary" id="downloadAllBtnImg" disabled>Download all (.zip)</button>
+      </div>
+    </section>
+
+    <!-- ============ PDFs PANEL ============ -->
+    <section class="panel-view" id="panel-pdfs">
+      <div class="dropzone" id="dropzonePdf">
+        <strong>Drop PDFs here, or click to upload</strong>
+        Watermark is stamped onto every page — text stays selectable, layout is untouched
+        <input type="file" id="fileInputPdf" accept="application/pdf" multiple style="display:none;">
+      </div>
+
+      <div class="preview-wrap">
+        <div class="proof-frame" id="proofFramePdf">
+          <canvas id="previewCanvasPdf"></canvas>
+          <div class="page-nav" id="pageNavPdf" style="display:none;">
+            <button id="pdfPrevPage">‹</button><span id="pdfPageLabel">1 / 1</span><button id="pdfNextPage">›</button>
+          </div>
+        </div>
+        <div class="empty-note" id="emptyNotePdf">Upload a PDF to see the watermark preview</div>
+      </div>
+
+      <div class="contact-sheet-head"><h2>Contact sheet</h2><span class="hint" id="countNotePdf"></span></div>
+      <div class="contact-sheet" id="thumbsPdf"></div>
+
+      <div class="export-bar"><span class="hint">PDFs export as watermarked .pdf files — vector text and page count are preserved.</span></div>
+
+      <div class="actions">
+        <button class="ghost" id="clearBtnPdf">Clear all</button>
+        <button class="primary" id="downloadAllBtnPdf" disabled>Download all (.pdf / .zip)</button>
+      </div>
+    </section>
+
+    <!-- ============ VIDEO PANEL ============ -->
+    <section class="panel-view" id="panel-video">
+      <div class="dropzone" id="dropzoneVideo">
+        <strong>Drop a video here, or click to upload</strong>
+        Watermark is burned into the video using the same settings as Images/PDFs
+        <input type="file" id="fileInputVideo" accept="video/*" multiple style="display:none;">
+      </div>
+
+      <div class="warn-box">
+        Video processing runs fully in your browser (no upload to a server) using a lightweight ffmpeg engine —
+        the first time you process a video it downloads a one-time ~25MB engine. Larger or longer clips take
+        longer and use more memory; keep this tab open while it runs. Best for clips under ~2 minutes / ~100MB.
+      </div>
+
+      <div class="preview-wrap">
+        <div class="proof-frame" id="proofFrameVideo">
+          <canvas id="previewCanvasVideo"></canvas>
+        </div>
+        <div class="empty-note" id="emptyNoteVideo">Upload a video to see the watermark preview (first frame)</div>
+      </div>
+
+      <div class="contact-sheet-head"><h2>Queue</h2><span class="hint" id="countNoteVideo"></span></div>
+      <div class="contact-sheet" id="thumbsVideo"></div>
+
+      <div id="videoProgressWrap" style="display:none;">
+        <div class="video-status" id="videoStatus">Preparing…</div>
+        <div class="progress-bar"><div class="progress-bar-fill" id="videoProgressFill"></div></div>
+      </div>
+
+      <div class="actions">
+        <button class="ghost" id="clearBtnVideo">Clear all</button>
+        <button class="primary" id="processBtnVideo" disabled>Burn watermark &amp; download</button>
+      </div>
+    </section>
+
+    <!-- ============ CONVERT PANEL ============ -->
+    <section class="panel-view" id="panel-convert">
+      <div class="dropzone" id="dropzoneConvert">
+        <strong>Drop photos here to convert or compress</strong>
+        No watermark applied — pure format conversion and/or compression
+        <input type="file" id="fileInputConvert" accept="image/*" multiple style="display:none;">
+      </div>
+
+      <div class="contact-sheet-head"><h2>Files</h2><span class="hint" id="countNoteConvert"></span></div>
+      <div class="contact-sheet" id="thumbsConvert"></div>
+
+      <div class="export-bar">
+        <div class="export-field">
+          <label class="field">Output format</label>
+          <select id="convertFormat"><option value="jpeg">JPEG</option><option value="png">PNG</option><option value="webp">WebP</option></select>
+        </div>
+        <div class="export-field">
+          <label class="field">Compression mode</label>
+          <div class="segmented" id="convertCompressModeSeg">
+            <button class="active" data-val="quality">By quality</button>
+            <button data-val="size">By target size</button>
+          </div>
+        </div>
+        <div class="export-field grow" id="convertQualityField">
+          <label class="field">Quality <span class="rangeval" id="convertQualityVal">85%</span></label>
+          <input type="range" id="convertQuality" min="10" max="100" value="85">
+        </div>
+        <div class="export-field grow" id="convertSizeField" style="display:none;">
+          <label class="field">Target size</label>
+          <div class="segmented" id="convertTargetSizePresetSeg">
+            <button data-val="200">200KB</button><button data-val="100">100KB</button><button data-val="50">50KB</button><button data-val="custom" class="active">Custom</button>
+          </div>
+          <input type="range" id="convertTargetSizeKB" min="10" max="2000" value="150" style="margin-top:8px;">
+          <span class="rangeval" id="convertTargetSizeVal" style="float:none; display:block; text-align:right;">150 KB</span>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="ghost" id="clearBtnConvert">Clear all</button>
+        <button class="primary" id="downloadAllBtnConvert" disabled>Download all (.zip)</button>
+      </div>
+    </section>
+
+    <!-- ============ PDF TOOLS PANEL ============ -->
+    <section class="panel-view" id="panel-pdftools">
+
+      <div class="pdftools-subnav" id="pdftoolsSubnav">
+        <button class="active" data-subtool="pagemanager">Page Manager</button>
+        <button data-subtool="pdf2jpg">PDF → JPG</button>
+        <button data-subtool="jpg2pdf">JPG → PDF</button>
+        <button data-subtool="pagenumbers">Page Numbers</button>
+        <button data-subtool="sign">Sign PDF</button>
+        <button data-subtool="compare">Compare PDFs</button>
+        <button data-subtool="protect">Protect PDF</button>
+        <button data-subtool="unlock">Unlock PDF</button>
+        <button data-subtool="compress">Compress PDF</button>
+        <button data-subtool="editpdf">Edit PDF</button>
+      </div>
+
+      <!-- PAGE MANAGER: merge / split / extract / rotate / organize -->
+      <div class="subtool-view active" id="subtool-pagemanager">
+        <div class="dropzone" id="dropzonePageMgr">
+          <strong>Drop one or more PDFs here</strong>
+          Merge, split, extract, rotate, and reorder pages — all in one workspace
+          <input type="file" id="fileInputPageMgr" accept="application/pdf" multiple style="display:none;">
+        </div>
+        <div class="contact-sheet-head"><h2>Pages</h2><span class="hint" id="countNotePageMgr"></span></div>
+        <div class="page-manager-grid" id="pageMgrGrid"></div>
+        <div class="pdftool-actions-panel" id="pageMgrActions" style="display:none;">
+          <div class="pdftool-action-row">
+            <button class="primary" id="pageMgrExportOne">Download as one PDF</button>
+            <span class="hint">Uses the current order, rotations, and any deletions/duplicates below.</span>
+          </div>
+          <div class="pdftool-action-row">
+            <input type="text" id="pageMgrSplitPoints" placeholder="Split after pages, e.g. 3,7">
+            <button class="primary" id="pageMgrExportSplit">Split &amp; download (.zip)</button>
+          </div>
+          <div class="pdftool-action-row">
+            <button class="primary" id="pageMgrExportSelected">Download selected pages</button>
+            <span class="hint">Check the boxes on pages you want to extract.</span>
+          </div>
+          <button class="ghost" id="pageMgrClear">Clear all</button>
+        </div>
+      </div>
+
+      <!-- PDF -> JPG -->
+      <div class="subtool-view" id="subtool-pdf2jpg">
+        <div class="dropzone" id="dropzonePdf2jpg">
+          <strong>Drop PDFs here</strong>
+          Every page exports as its own JPG image
+          <input type="file" id="fileInputPdf2jpg" accept="application/pdf" multiple style="display:none;">
+        </div>
+        <div class="contact-sheet-head"><h2>Files</h2><span class="hint" id="countNotePdf2jpg"></span></div>
+        <div class="contact-sheet" id="thumbsPdf2jpg"></div>
+        <div class="export-bar">
+          <div class="export-field grow">
+            <label class="field">JPG quality <span class="rangeval" id="pdf2jpgQualityVal">85%</span></label>
+            <input type="range" id="pdf2jpgQuality" min="10" max="100" value="85">
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearPdf2jpg">Clear all</button>
+          <button class="primary" id="exportPdf2jpg" disabled>Download JPGs (.zip)</button>
+        </div>
+      </div>
+
+      <!-- JPG -> PDF -->
+      <div class="subtool-view" id="subtool-jpg2pdf">
+        <div class="dropzone" id="dropzoneJpg2pdf">
+          <strong>Drop images here</strong>
+          Combined into a single PDF, one image per page, in the order shown below
+          <input type="file" id="fileInputJpg2pdf" accept="image/*" multiple style="display:none;">
+        </div>
+        <div class="contact-sheet-head"><h2>Pages</h2><span class="hint" id="countNoteJpg2pdf"></span></div>
+        <div class="page-manager-grid" id="jpg2pdfGrid"></div>
+        <div class="export-bar">
+          <div class="export-field">
+            <label class="field">Page size</label>
+            <div class="segmented" id="jpg2pdfPageSizeSeg">
+              <button class="active" data-val="fit">Fit to image</button>
+              <button data-val="a4">A4</button>
+              <button data-val="letter">Letter</button>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearJpg2pdf">Clear all</button>
+          <button class="primary" id="exportJpg2pdf" disabled>Download PDF</button>
+        </div>
+      </div>
+
+      <!-- PAGE NUMBERS -->
+      <div class="subtool-view" id="subtool-pagenumbers">
+        <div class="dropzone" id="dropzonePageNum">
+          <strong>Drop PDFs here</strong>
+          Page numbers are added to every page
+          <input type="file" id="fileInputPageNum" accept="application/pdf" multiple style="display:none;">
+        </div>
+        <div class="contact-sheet-head"><h2>Files</h2><span class="hint" id="countNotePageNum"></span></div>
+        <div class="contact-sheet" id="thumbsPageNum"></div>
+        <div class="export-bar">
+          <div class="export-field">
+            <label class="field">Position</label>
+            <div class="pos-grid" id="pageNumPosGrid">
+              <button class="pos-btn" data-val="tl">Top left</button>
+              <button class="pos-btn" data-val="tr">Top right</button>
+              <button class="pos-btn" data-val="bl">Bottom left</button>
+              <button class="pos-btn active" data-val="br">Bottom right</button>
+            </div>
+          </div>
+          <div class="export-field">
+            <label class="field">Format</label>
+            <select id="pageNumFormat">
+              <option value="n">1</option>
+              <option value="page_n" selected>Page 1</option>
+              <option value="n_of_total">1 / N</option>
+              <option value="page_n_of_total">Page 1 of N</option>
+            </select>
+          </div>
+          <div class="export-field">
+            <label class="field">Start at</label>
+            <input type="number" id="pageNumStart" value="1" min="0">
+          </div>
+          <div class="export-field">
+            <label class="field">Size <span class="rangeval" id="pageNumSizeVal">12px</span></label>
+            <input type="range" id="pageNumSize" min="8" max="30" value="12">
+          </div>
+          <div class="export-field">
+            <label class="field">Color</label>
+            <input type="color" id="pageNumColor" value="#000000" style="height:34px;padding:2px;">
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearPageNum">Clear all</button>
+          <button class="primary" id="exportPageNum" disabled>Add numbers &amp; download</button>
+        </div>
+      </div>
+
+      <!-- SIGN -->
+      <div class="subtool-view" id="subtool-sign">
+        <div class="dropzone" id="dropzoneSign">
+          <strong>Drop a PDF here</strong>
+          Draw a signature, then place it on any page
+          <input type="file" id="fileInputSign" accept="application/pdf" style="display:none;">
+        </div>
+        <div id="signWorkspace" style="display:none;">
+          <div class="contact-sheet-head"><h2>Pages</h2><span class="hint">Click a page to sign it</span></div>
+          <div class="contact-sheet" id="thumbsSignPages"></div>
+
+          <div class="preview-wrap">
+            <div class="proof-frame" id="proofFrameSign">
+              <canvas id="previewCanvasSign"></canvas>
+              <div class="drag-handle show" id="signatureHandle" title="Drag to reposition signature"></div>
+            </div>
+          </div>
+
+          <div class="section" style="margin-top:16px;">
+            <div class="section-title" style="margin-bottom:10px;">Draw your signature</div>
+            <canvas id="signaturePad" width="500" height="160"></canvas>
+            <div class="row" style="margin-top:10px;">
+              <button class="ghost small" id="clearSignaturePad">Clear signature</button>
+              <label class="field" style="margin:0; display:flex; align-items:center; gap:8px;">
+                Size <input type="range" id="signatureSize" min="60" max="400" value="180" style="width:120px;">
+              </label>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearSign">Clear all</button>
+          <button class="primary" id="exportSign" disabled>Apply signature &amp; download</button>
+        </div>
+      </div>
+
+      <!-- COMPARE -->
+      <div class="subtool-view" id="subtool-compare">
+        <div class="compare-upload-row">
+          <div class="dropzone" id="dropzoneCompareA">
+            <strong>PDF A</strong>
+            Drop or click to upload
+            <input type="file" id="fileInputCompareA" accept="application/pdf" style="display:none;">
+          </div>
+          <div class="dropzone" id="dropzoneCompareB">
+            <strong>PDF B</strong>
+            Drop or click to upload
+            <input type="file" id="fileInputCompareB" accept="application/pdf" style="display:none;">
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearCompare">Clear all</button>
+          <button class="primary" id="runCompare" disabled>Compare</button>
+        </div>
+        <p class="hint">Pages are compared by matching position (page 1 vs page 1, page 2 vs page 2, and so on) — inserting or removing a page partway through will shift later comparisons out of alignment.</p>
+        <div id="compareResults"></div>
+      </div>
+
+      <!-- PROTECT PDF (password) -->
+      <div class="subtool-view" id="subtool-protect">
+        <div class="warn-box">
+          This adds an open-password using standard PDF (RC4 128-bit) encryption — the file can't be opened without the password in Adobe Acrobat, browser PDF viewers, and most other readers. It doesn't include granular permission controls like "allow viewing but block printing." Need to remove an existing password instead? Use the Unlock PDF tool.
+        </div>
+        <div class="dropzone" id="dropzoneProtect">
+          <strong>Drop a PDF here</strong>
+          Add a password before downloading
+          <input type="file" id="fileInputProtect" accept="application/pdf" style="display:none;">
+        </div>
+        <div class="contact-sheet-head"><h2>File</h2><span class="hint" id="countNoteProtect"></span></div>
+        <div class="contact-sheet" id="thumbsProtect"></div>
+        <div class="export-bar">
+          <div class="export-field grow">
+            <label class="field">Password</label>
+            <input type="text" id="protectPassword" placeholder="Enter a password">
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearProtect">Clear</button>
+          <button class="primary" id="exportProtect" disabled>Protect &amp; download</button>
+        </div>
+      </div>
+
+      <!-- UNLOCK PDF (remove known password) -->
+      <div class="subtool-view" id="subtool-unlock">
+        <div class="warn-box">
+          This removes password protection when you already know the password — it's not a password cracker. It supports both encryption types PDFs commonly use (AES-256 and legacy RC4), auto-detected. If the password is wrong, decryption fails safely rather than producing a corrupted file.
+        </div>
+        <div class="dropzone" id="dropzoneUnlock">
+          <strong>Drop a password-protected PDF here</strong>
+          Enter its password below to remove protection
+          <input type="file" id="fileInputUnlock" accept="application/pdf" style="display:none;">
+        </div>
+        <div class="contact-sheet-head"><h2>File</h2><span class="hint" id="countNoteUnlock"></span></div>
+        <div class="contact-sheet" id="thumbsUnlock"></div>
+        <div class="export-bar">
+          <div class="export-field grow">
+            <label class="field">Password</label>
+            <input type="text" id="unlockPassword" placeholder="Enter the PDF's current password">
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearUnlock">Clear</button>
+          <button class="primary" id="exportUnlock" disabled>Unlock &amp; download</button>
+        </div>
+      </div>
+
+      <!-- COMPRESS PDF -->
+      <div class="subtool-view" id="subtool-compress">
+        <div class="warn-box">
+          This recompresses JPEG images embedded in the PDF at a lower quality — it's the main source of file size in most photo-heavy PDFs. Text-heavy or already-optimized PDFs will shrink only modestly, since there isn't much image data to recompress. Non-JPEG embedded images are left untouched.
+        </div>
+        <div class="dropzone" id="dropzoneCompress">
+          <strong>Drop PDFs here</strong>
+          Embedded JPEG images are recompressed to shrink file size
+          <input type="file" id="fileInputCompress" accept="application/pdf" multiple style="display:none;">
+        </div>
+        <div class="contact-sheet-head"><h2>Files</h2><span class="hint" id="countNoteCompress"></span></div>
+        <div class="contact-sheet" id="thumbsCompress"></div>
+        <div class="export-bar">
+          <div class="export-field grow">
+            <label class="field">Image quality <span class="rangeval" id="compressQualityVal">65%</span></label>
+            <input type="range" id="compressQuality" min="10" max="95" value="65">
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearCompress">Clear all</button>
+          <button class="primary" id="exportCompress" disabled>Compress &amp; download</button>
+        </div>
+        <div id="compressResults"></div>
+      </div>
+
+      <!-- EDIT PDF (overlay annotations) -->
+      <div class="subtool-view" id="subtool-editpdf">
+        <div class="warn-box">
+          This adds new text, images, shapes, and freehand marks on top of a page — it doesn't let you click into and rewrite text that's already in the original document. See <a href="/edit-pdf-online-free.html">what this tool is and isn't</a> for more.
+        </div>
+        <div class="dropzone" id="dropzoneEdit">
+          <strong>Drop a PDF here</strong>
+          Add text, shapes, images, or freehand annotations to any page
+          <input type="file" id="fileInputEdit" accept="application/pdf" style="display:none;">
+        </div>
+        <div id="editWorkspace" style="display:none;">
+          <div class="contact-sheet-head"><h2>Pages</h2><span class="hint">Click a page to edit it</span></div>
+          <div class="contact-sheet" id="thumbsEditPages"></div>
+
+          <div class="edit-toolbar" id="editToolbar">
+            <div class="segmented" id="editModeSeg">
+              <button class="active" data-val="select">Select/Move</button>
+              <button data-val="text">Text</button>
+              <button data-val="rect">Rectangle</button>
+              <button data-val="ellipse">Ellipse</button>
+              <button data-val="line">Line</button>
+              <button data-val="freehand">Freehand</button>
+              <button data-val="image">Image</button>
+            </div>
+            <div class="edit-toolbar-row">
+              <label class="field" style="margin:0;">Color <input type="color" id="editColor" value="#e0433c" style="height:30px; width:44px; padding:2px; vertical-align:middle;"></label>
+              <label class="field" style="margin:0;">Size <input type="range" id="editSize" min="1" max="80" value="18" style="width:120px; vertical-align:middle;"></label>
+              <input type="file" id="editImageInput" accept="image/*" style="display:none;">
+              <button class="ghost small" id="editDeleteSelected">Delete selected</button>
+              <button class="ghost small" id="editClearPage">Clear this page</button>
+            </div>
+          </div>
+
+          <div class="preview-wrap">
+            <div class="proof-frame" id="proofFrameEdit">
+              <canvas id="previewCanvasEdit"></canvas>
+            </div>
+          </div>
+        </div>
+        <div class="actions">
+          <button class="ghost" id="clearEdit">Clear all</button>
+          <button class="primary" id="exportEdit" disabled>Apply edits &amp; download</button>
+        </div>
+      </div>
+
+    </section>
+
+  </main>
+</div>
+
+<footer class="app-footer">
+  <span>Files are processed in your browser and never uploaded.</span>
+  <div class="app-footer-links">
+    <a href="/how-it-works.html">How it works</a>
+    <a href="/privacy.html">Privacy</a>
+    <a href="#" onclick="window.__proofmarkOpenCookieSettings && window.__proofmarkOpenCookieSettings(); return false;">Cookie settings</a>
+  </div>
+</footer>
+
+<!-- ============ CROP MODAL ============ -->
+<div class="modal-backdrop" id="cropModalBackdrop">
+  <div class="modal">
+    <h3 id="cropModalTitle">Crop before watermarking?</h3>
+    <p class="modal-sub" id="cropModalSub">Choose a size for this batch, or skip to keep original dimensions.</p>
+    <div class="crop-preset-grid" id="cropPresetGrid"></div>
+    <div class="row">
+      <div style="flex:1;"><label class="field">Custom width (px)</label><input type="number" id="cropCustomW" placeholder="e.g. 1080"></div>
+      <div style="flex:1;"><label class="field">Custom height (px)</label><input type="number" id="cropCustomH" placeholder="e.g. 1080"></div>
+    </div>
+    <div class="crop-stage" id="cropStage" style="display:none;">
+      <img id="cropStageImg" alt="Crop preview">
+      <div class="crop-box" id="cropBox"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="ghost" id="cropSkipBtn">Skip — keep original size</button>
+      <button class="primary" id="cropApplyBtn">Apply crop</button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+<script src="pdftools.js"></script>
+</body>
+</html>

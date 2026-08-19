@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://proofmark.app/sitemap.xml
